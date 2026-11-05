@@ -6,6 +6,8 @@ import com.lostf1sh.pixelplayeross.data.database.ListenBrainzPendingListenEntity
 import com.lostf1sh.pixelplayeross.data.database.ListenBrainzSource
 import com.lostf1sh.pixelplayeross.data.database.MusicDao
 import com.lostf1sh.pixelplayeross.data.database.SongEntity
+import com.lostf1sh.pixelplayeross.data.model.Song
+import com.lostf1sh.pixelplayeross.data.navidrome.NavidromeRepository
 import com.lostf1sh.pixelplayeross.data.preferences.ListenBrainzPreferencesRepository
 import com.lostf1sh.pixelplayeross.di.AppScope
 import kotlinx.coroutines.CoroutineScope
@@ -14,6 +16,34 @@ import timber.log.Timber
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/** What a listen needs from a song, wherever the song comes from. */
+internal data class ListenTrack(
+    val title: String,
+    val artistName: String,
+    val albumName: String,
+    val duration: Long,
+    val mbRecordingId: String?,
+    val source: String
+)
+
+private fun SongEntity.toListenTrack() = ListenTrack(
+    title = title,
+    artistName = artistName,
+    albumName = albumName,
+    duration = duration,
+    mbRecordingId = mbRecordingId,
+    source = ListenBrainzSource.fromSourceType(sourceType)
+)
+
+internal fun Song.toListenTrack() = ListenTrack(
+    title = title,
+    artistName = artist,
+    albumName = album,
+    duration = duration,
+    mbRecordingId = null,
+    source = ListenBrainzSource.NAVIDROME
+)
 
 /**
  * Bridges finalized listening sessions to the ListenBrainz submission queue.
@@ -31,6 +61,7 @@ class ScrobbleManager @Inject constructor(
     private val listenBrainzDao: ListenBrainzDao,
     private val listenBrainzRepository: ListenBrainzRepository,
     private val listenBrainzPreferences: ListenBrainzPreferencesRepository,
+    private val navidromeRepository: NavidromeRepository,
     @AppScope private val scope: CoroutineScope
 ) {
     private var lastPlayingNowSongId: String? = null
@@ -95,7 +126,7 @@ class ScrobbleManager @Inject constructor(
                 releaseName = song.albumName.takeIf { it.isNotBlank() },
                 durationMs = song.duration.takeIf { it > 0 },
                 recordingMbid = song.mbRecordingId,
-                source = ListenBrainzSource.fromSourceType(song.sourceType),
+                source = song.source,
                 createdAtMs = System.currentTimeMillis()
             )
         )
@@ -107,14 +138,16 @@ class ScrobbleManager @Inject constructor(
 
     /**
      * Resolves the song, or null when it no longer exists, lacks the metadata ListenBrainz
-     * requires, or its playback source's scrobble toggle is off.
+     * requires, or its playback source's scrobble toggle is off. A song played from the server
+     * without being in the library yet is resolved from what the search returned for it.
      */
-    private suspend fun resolveAdmittedSong(songId: String): SongEntity? {
+    private suspend fun resolveAdmittedSong(songId: String): ListenTrack? {
         val id = songId.toLongOrNull() ?: return null
-        val song = musicDao.getSongByIdOnce(id) ?: return null
+        val song = musicDao.getSongByIdOnce(id)?.toListenTrack()
+            ?: navidromeRepository.remoteSong(id)?.toListenTrack()
+            ?: return null
         if (song.title.isBlank() || song.artistName.isBlank()) return null
-        val source = ListenBrainzSource.fromSourceType(song.sourceType)
-        if (!listenBrainzPreferences.isSourceEnabled(source)) return null
+        if (!listenBrainzPreferences.isSourceEnabled(song.source)) return null
         return song
     }
 

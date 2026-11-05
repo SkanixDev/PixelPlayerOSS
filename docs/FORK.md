@@ -29,6 +29,7 @@ App -> octo-fiesta -> Navidrome
 
 | Albums and artists come from the server too, and open like library ones | `NavidromeRepository.searchServer`, `RemoteCatalog` |
 | Albums and artists play as a queue: each external track downloads when its turn comes | `getSongsForAlbum`, `getSongsForArtist` |
+| Listens to tracks not in the library still reach ListenBrainz, sent by the app | `ScrobbleManager`, `RemoteCatalog` |
 
 Playlists in search results stay local.
 
@@ -38,6 +39,9 @@ Playlists in search results stay local.
   server playlists.
 - If a playlist addition fails for good, it only shows in the logs.
 - An artist page loads at most 30 albums.
+- Connect ListenBrainz in the app, not in Navidrome: both together would count listens twice,
+  and octo-fiesta drops the server scrobble of a track that is not available yet.
+- A listen to an external track is lost if the app restarts before the session ends.
 - A remote album or artist page restored after the app was killed shows as not found.
 - A played external track is not in the library until the next sync, so favorites and stats
   on it stay under its temporary id.

@@ -741,6 +741,8 @@ class NavidromeRepository @Inject constructor(
         }
     }
 
+    fun remoteSong(songId: Long): Song? = remoteCatalog.song(songId)
+
     fun remoteAlbum(albumId: Long): Album? = remoteCatalog.album(albumId)?.item
 
     fun remoteArtist(artistId: Long): Artist? = remoteCatalog.artist(artistId)?.item
@@ -808,7 +810,7 @@ class NavidromeRepository @Inject constructor(
                 artistId = song.artistId?.let { serverArtistId ->
                     registerArtist(NavidromeArtist(id = serverArtistId, name = song.artist)).id
                 } ?: -1L
-            )
+            ).also { remoteCatalog.putSong(unifiedId, it) }
         }
     }
 
