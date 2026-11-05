@@ -676,6 +676,14 @@ fun SettingsCategoryScreen(
                                     leadingIcon = { Icon(painterResource(R.drawable.rounded_artist_24), null, tint = MaterialTheme.colorScheme.secondary) },
                                     modifier = Modifier.settingHighlight("item_library_external_artist_images", highlightKey)
                                 )
+                                SwitchSettingItem(
+                                    title = stringResource(R.string.setcat_server_first_search_title),
+                                    subtitle = stringResource(R.string.setcat_server_first_search_subtitle),
+                                    checked = uiState.serverFirstSearchEnabled,
+                                    onCheckedChange = { settingsViewModel.setServerFirstSearchEnabled(it) },
+                                    leadingIcon = { Icon(painterResource(R.drawable.ic_navidrome_md3), null, tint = MaterialTheme.colorScheme.secondary) },
+                                    modifier = Modifier.settingHighlight("item_library_server_first_search", highlightKey)
+                                )
                             }
 
                         }

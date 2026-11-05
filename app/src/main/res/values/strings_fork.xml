@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Strings added by this fork. They live apart from upstream's files to keep merges clean. -->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
+    <string name="setcat_server_first_search_title">Search the server first</string>
+    <string name="setcat_server_first_search_subtitle">Show results from your Navidrome/Subsonic server first, then local songs that are not on it.</string>
+    <string name="playlist_server_add_queued_toast">It will be added once it is ready on the server</string>
+    <string name="playlist_server_required_toast">This track can only join a playlist from your server</string>
+</resources>

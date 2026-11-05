@@ -227,6 +227,18 @@ object SettingsRegistry {
                 getValue = { it.externalArtistImagesEnabled },
                 onToggle = { viewModel, checked -> viewModel.setExternalArtistImagesEnabled(checked) }
             ),
+            SettingSpec(
+                id = "library_server_first_search",
+                itemKey = "item_library_server_first_search",
+                titleRes = R.string.setcat_server_first_search_title,
+                subtitleRes = R.string.setcat_server_first_search_subtitle,
+                category = SettingsCategory.LIBRARY,
+                subscreenRoute = Screen.SettingsCategory.createRoute("library"),
+                type = SettingType.SWITCH,
+                keywordsStatic = listOf("search", "server", "navidrome", "subsonic", "octo-fiesta"),
+                getValue = { it.serverFirstSearchEnabled },
+                onToggle = { viewModel, checked -> viewModel.setServerFirstSearchEnabled(checked) }
+            ),
 
             // --- LYRICS SUBSCREEN (grouped under Playback) ---
             SettingSpec(

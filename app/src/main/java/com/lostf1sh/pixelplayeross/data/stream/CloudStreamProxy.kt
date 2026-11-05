@@ -40,8 +40,15 @@ import java.util.concurrent.TimeUnit
  *
  * @param K The service-specific song identifier type.
  */
+/**
+ * How long the player and the Navidrome proxy wait for a server to start answering. It has to
+ * cover a server that prepares the whole track before sending its first byte.
+ */
+const val CLOUD_FIRST_RESPONSE_TIMEOUT_MS = 180_000L
+
 abstract class CloudStreamProxy<K : Any>(
-    private val okHttpClient: OkHttpClient
+    private val okHttpClient: OkHttpClient,
+    private val streamReadTimeoutSeconds: Long = STREAM_READ_TIMEOUT_SECONDS
 ) {
 
     protected abstract val allowedHostSuffixes: Set<String>
@@ -73,7 +80,7 @@ abstract class CloudStreamProxy<K : Any>(
 
     private val streamingClient: OkHttpClient by lazy {
         okHttpClient.newBuilder()
-            .readTimeout(STREAM_READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .readTimeout(streamReadTimeoutSeconds, TimeUnit.SECONDS)
             .build()
     }
 

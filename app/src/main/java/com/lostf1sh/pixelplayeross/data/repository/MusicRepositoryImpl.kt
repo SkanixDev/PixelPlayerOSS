@@ -40,6 +40,8 @@ import com.lostf1sh.pixelplayeross.data.model.SearchResultItem
 import com.lostf1sh.pixelplayeross.data.model.SortOption
 import com.lostf1sh.pixelplayeross.data.model.FolderSource
 import com.lostf1sh.pixelplayeross.data.model.StorageFilter
+import com.lostf1sh.pixelplayeross.data.navidrome.NavidromeRepository
+import com.lostf1sh.pixelplayeross.data.navidrome.mergeServerFirst
 import com.lostf1sh.pixelplayeross.data.preferences.PlaylistPreferencesRepository
 import com.lostf1sh.pixelplayeross.data.preferences.UserPreferencesRepository
 import com.lostf1sh.pixelplayeross.ui.theme.GenreThemeUtils
@@ -91,7 +93,8 @@ class MusicRepositoryImpl @Inject constructor(
     private val songRepository: SongRepository,
     private val favoritesDao: FavoritesDao,
     private val artistImageRepository: ArtistImageRepository,
-    private val folderTreeBuilder: FolderTreeBuilder
+    private val folderTreeBuilder: FolderTreeBuilder,
+    private val navidromeRepository: NavidromeRepository
 ) : MusicRepository {
 
     companion object {
@@ -563,6 +566,26 @@ class MusicRepositoryImpl @Inject constructor(
     }
 
 
+    /**
+     * The song results of a search. With a server connected and the setting on, local matches
+     * show right away so the screen never waits on the network, then server results take over
+     * ahead of them. A server that fails leaves the local matches in place.
+     */
+    private fun searchSongsServerFirst(query: String): Flow<List<Song>> {
+        return userPreferencesRepository.serverFirstSearchEnabledFlow.flatMapLatest { enabled ->
+            if (!enabled || !navidromeRepository.isLoggedIn) {
+                return@flatMapLatest searchSongs(query)
+            }
+            val serverResults = flow {
+                emit(null)
+                emit(navidromeRepository.searchPlayableSongs(query).getOrNull())
+            }
+            combine(searchSongs(query), serverResults) { local, server ->
+                server?.let { mergeServerFirst(it, local) } ?: local
+            }
+        }
+    }
+
     override fun searchAlbums(query: String, minTracks: Int): Flow<List<Album>> {
         if (query.isBlank()) return flowOf(emptyList())
         return musicDao.searchAlbums(query, emptyList(), false, minTracks).map { entities ->
@@ -597,7 +620,7 @@ class MusicRepositoryImpl @Inject constructor(
             when (filterType) {
                 SearchFilterType.ALL -> {
                     combine(
-                        searchSongs(query),
+                        searchSongsServerFirst(query),
                         searchAlbums(query, minTracks),
                         searchArtists(query),
                         playlistsFlow
@@ -612,7 +635,7 @@ class MusicRepositoryImpl @Inject constructor(
                 }
                 // Each type filter shows exactly its section of the All results, so Songs matches
                 // artists as well as titles: an artist search must not lose its songs.
-                SearchFilterType.SONGS -> searchSongs(query).map { songs -> songs.map { SearchResultItem.SongItem(it) } }
+                SearchFilterType.SONGS -> searchSongsServerFirst(query).map { songs -> songs.map { SearchResultItem.SongItem(it) } }
                 SearchFilterType.ALBUMS -> searchAlbums(query, minTracks).map { albums -> albums.map { SearchResultItem.AlbumItem(it) } }
                 SearchFilterType.ARTISTS -> searchArtists(query).map { artists -> artists.map { SearchResultItem.ArtistItem(it) } }
                 SearchFilterType.PLAYLISTS -> playlistsFlow.map { playlists -> playlists.map { SearchResultItem.PlaylistItem(it) } }

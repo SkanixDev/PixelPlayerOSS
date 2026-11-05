@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="setcat_server_first_search_title">Chercher d\'abord sur le serveur</string>
+    <string name="setcat_server_first_search_subtitle">Afficher d\'abord les résultats de votre serveur Navidrome/Subsonic, puis les morceaux locaux absents du serveur.</string>
+    <string name="playlist_server_add_queued_toast">Le morceau sera ajouté dès qu\'il sera prêt sur le serveur</string>
+    <string name="playlist_server_required_toast">Ce morceau ne peut rejoindre qu\'une playlist de votre serveur</string>
+</resources>

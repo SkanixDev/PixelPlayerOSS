@@ -11,6 +11,7 @@ import com.lostf1sh.pixelplayeross.data.model.Playlist
 import com.lostf1sh.pixelplayeross.data.model.SearchFilterType
 import com.lostf1sh.pixelplayeross.data.model.SearchResultItem
 import com.lostf1sh.pixelplayeross.data.model.Song
+import com.lostf1sh.pixelplayeross.data.navidrome.NavidromeRepository
 import com.lostf1sh.pixelplayeross.data.preferences.PlaylistPreferencesRepository
 import com.lostf1sh.pixelplayeross.data.preferences.UserPreferencesRepository
 import com.lostf1sh.pixelplayeross.data.database.FavoritesDao
@@ -20,6 +21,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.flow.MutableStateFlow
 import app.cash.turbine.test
 import kotlinx.coroutines.test.*
@@ -45,6 +47,7 @@ class MusicRepositoryImplTest {
     private val mockSongRepository: SongRepository = mockk(relaxed = true)
     private val mockFavoritesDao: FavoritesDao = mockk(relaxed = true)
     private val mockArtistImageRepository: ArtistImageRepository = mockk(relaxed = true)
+    private val mockNavidromeRepository: NavidromeRepository = mockk(relaxed = true)
 
     private val testDispatcher = StandardTestDispatcher()
 
@@ -57,6 +60,7 @@ class MusicRepositoryImplTest {
         coEvery { mockUserPreferencesRepository.blockedDirectoriesFlow } returns flowOf(setOf("/dummy"))
         coEvery { mockUserPreferencesRepository.initialSetupDoneFlow } returns flowOf(true)
         coEvery { mockUserPreferencesRepository.isFolderFilterActiveFlow } returns flowOf(false)
+        every { mockUserPreferencesRepository.serverFirstSearchEnabledFlow } returns flowOf(true)
         val dummyArtists = listOf(
             ArtistEntity(101L, "ArtistName1", 5, null),
             ArtistEntity(102L, "ArtistName2", 3, null)
@@ -106,8 +110,65 @@ class MusicRepositoryImplTest {
 
             favoritesDao = mockFavoritesDao,
             artistImageRepository = mockArtistImageRepository,
-            folderTreeBuilder = mockk(relaxed = true)
+            folderTreeBuilder = mockk(relaxed = true),
+            navidromeRepository = mockNavidromeRepository
         )
+    }
+
+    @Nested
+    @DisplayName("Server first search")
+    inner class ServerFirstSearch {
+        private val localSong = createSongEntity(1L, "Local", "Artist", "Pop", "/m/a.mp3", "/m")
+        private val serverSong = Song.emptySong().copy(id = "-9", title = "Server", navidromeId = "s1")
+
+        private suspend fun lastSongResults(): List<Song> =
+            musicRepository.searchAll("query", SearchFilterType.SONGS)
+                .toList()
+                .last()
+                .filterIsInstance<SearchResultItem.SongItem>()
+                .map { it.song }
+
+        @BeforeEach
+        fun setUp() {
+            every { mockUserPreferencesRepository.minTracksPerAlbumFlow } returns flowOf(1)
+            every { mockMusicDao.searchSongsLimited(any(), any(), any(), any()) } returns
+                flowOf(listOf(localSong))
+        }
+
+        @Test
+        fun `server results come before local songs`() = runTest {
+            every { mockNavidromeRepository.isLoggedIn } returns true
+            coEvery { mockNavidromeRepository.searchPlayableSongs(any(), any()) } returns
+                Result.success(listOf(serverSong))
+
+            assertEquals(listOf("Server", "Local"), lastSongResults().map { it.title })
+        }
+
+        @Test
+        fun `failing server keeps local songs`() = runTest {
+            every { mockNavidromeRepository.isLoggedIn } returns true
+            coEvery { mockNavidromeRepository.searchPlayableSongs(any(), any()) } returns
+                Result.failure(Exception("offline"))
+
+            assertEquals(listOf("Local"), lastSongResults().map { it.title })
+        }
+
+        @Test
+        fun `disabled setting never calls the server`() = runTest {
+            every { mockNavidromeRepository.isLoggedIn } returns true
+            every { mockUserPreferencesRepository.serverFirstSearchEnabledFlow } returns flowOf(false)
+
+            assertEquals(listOf("Local"), lastSongResults().map { it.title })
+            coVerify(exactly = 0) { mockNavidromeRepository.searchPlayableSongs(any(), any()) }
+        }
+
+        @Test
+        fun `logged out user never calls the server`() = runTest {
+            every { mockNavidromeRepository.isLoggedIn } returns false
+
+            assertEquals(listOf("Local"), lastSongResults().map { it.title })
+            coVerify(exactly = 0) { mockNavidromeRepository.searchPlayableSongs(any(), any()) }
+        }
     }
 
     @AfterEach

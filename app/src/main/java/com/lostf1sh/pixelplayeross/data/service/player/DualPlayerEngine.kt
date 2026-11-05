@@ -21,6 +21,7 @@ import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -61,6 +62,7 @@ import javax.inject.Singleton
 import kotlin.coroutines.resume
 
 import com.lostf1sh.pixelplayeross.data.navidrome.NavidromeStreamProxy
+import com.lostf1sh.pixelplayeross.data.stream.CLOUD_FIRST_RESPONSE_TIMEOUT_MS
 
 data class ActiveDecoderInfo(
     val name: String,
@@ -1165,7 +1167,11 @@ class DualPlayerEngine @Inject constructor(
             }
         }
         
-        val dataSourceFactory = DefaultDataSource.Factory(context)
+        val dataSourceFactory = DefaultDataSource.Factory(
+            context,
+            DefaultHttpDataSource.Factory()
+                .setReadTimeoutMs(CLOUD_FIRST_RESPONSE_TIMEOUT_MS.toInt())
+        )
         val resolvingFactory = ResolvingDataSource.Factory(dataSourceFactory, resolver)
         val extractorsFactory = DefaultExtractorsFactory()
             .setMp3ExtractorFlags(Mp3Extractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING)

@@ -1,6 +1,7 @@
 package com.lostf1sh.pixelplayeross.data.navidrome
 
 import android.net.Uri
+import com.lostf1sh.pixelplayeross.data.stream.CLOUD_FIRST_RESPONSE_TIMEOUT_MS
 import com.lostf1sh.pixelplayeross.data.stream.CloudStreamProxy
 import com.lostf1sh.pixelplayeross.data.stream.CloudStreamSecurity
 import kotlinx.coroutines.CancellationException
@@ -20,7 +21,11 @@ import javax.inject.Singleton
 class NavidromeStreamProxy @Inject constructor(
     private val repository: NavidromeRepository,
     okHttpClient: OkHttpClient
-) : CloudStreamProxy<String>(okHttpClient) {
+) : CloudStreamProxy<String>(
+    okHttpClient,
+    // octo-fiesta sends nothing until it has downloaded the whole track on first listen.
+    streamReadTimeoutSeconds = CLOUD_FIRST_RESPONSE_TIMEOUT_MS / 1_000
+) {
 
     override val allowedHostSuffixes: Set<String>
         get() = repository.serverUrl?.toHttpUrlOrNull()?.host?.let { setOf(it) } ?: emptySet()

@@ -44,6 +44,8 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.media3.common.util.UnstableApi
 import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.data.model.isSmartPlaylist
+import com.lostf1sh.pixelplayeross.data.navidrome.isExternalServerTrack
+import com.lostf1sh.pixelplayeross.data.navidrome.isWritableServerPlaylist
 import com.lostf1sh.pixelplayeross.presentation.components.subcomps.LibraryActionRow
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlayerViewModel
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlaylistUiState
@@ -72,8 +74,13 @@ fun PlaylistBottomSheet(
     )
 
     var searchQuery by remember { mutableStateOf("") }
-    val editablePlaylists = remember(playlistUiState.playlists) {
-        playlistUiState.playlists.filterNot { it.isSmartPlaylist }.toImmutableList()
+    // An external track is not in the library yet, so only its server playlist can hold it.
+    val hasExternalSongs = remember(songs) { songs.any { it.isExternalServerTrack } }
+    val editablePlaylists = remember(playlistUiState.playlists, hasExternalSongs) {
+        playlistUiState.playlists
+            .filterNot { it.isSmartPlaylist }
+            .filter { !hasExternalSongs || it.isWritableServerPlaylist }
+            .toImmutableList()
     }
     val filteredPlaylists = remember(searchQuery, editablePlaylists) {
         if (searchQuery.isBlank()) editablePlaylists
@@ -110,6 +117,8 @@ fun PlaylistBottomSheet(
             val playlistCreatedToast = stringResource(R.string.playlist_created_songs_added_toast)
             val songsAddedToast = stringResource(R.string.playlist_songs_added_toast)
             val savedToast = stringResource(R.string.playlist_saved_toast)
+            val serverAddQueuedToast = stringResource(R.string.playlist_server_add_queued_toast)
+            val serverPlaylistRequiredToast = stringResource(R.string.playlist_server_required_toast)
 
             Column {
                 Row(
@@ -165,7 +174,12 @@ fun PlaylistBottomSheet(
                         end = 10.dp
                     ),
                     onMainActionClick = {
-                        showCreatePlaylistDialog = true
+                        // New playlists are local, which cannot hold an external track.
+                        if (hasExternalSongs) {
+                            playerViewModel.sendToast(serverPlaylistRequiredToast)
+                        } else {
+                            showCreatePlaylistDialog = true
+                        }
                     },
                     iconRotation = 0f,
                     showSortButton = false,
@@ -221,6 +235,12 @@ fun PlaylistBottomSheet(
                 onClick = {
                     if (!isAnyPlaylistSelected) return@MediumExtendedFloatingActionButton
 
+                    // Taken before the local playlists change, so it sees what is really new.
+                    playlistViewModel.addSongsToServerPlaylists(
+                        songs,
+                        editablePlaylists.filter { selectedPlaylists[it.id] == true }
+                    )
+
                     if (songs.size == 1) {
                          playlistViewModel.addOrRemoveSongFromPlaylists(
                             songs.first().id,
@@ -237,7 +257,13 @@ fun PlaylistBottomSheet(
                          }
                     }
                     onDismiss()
-                    playerViewModel.sendToast(if (songs.size > 1) songsAddedToast else savedToast)
+                    playerViewModel.sendToast(
+                        when {
+                            hasExternalSongs -> serverAddQueuedToast
+                            songs.size > 1 -> songsAddedToast
+                            else -> savedToast
+                        }
+                    )
                     playerViewModel.multiSelectionStateHolder.clearSelection()
                 },
                 icon = { Icon(Icons.Rounded.Save, stringResource(R.string.action_save)) },

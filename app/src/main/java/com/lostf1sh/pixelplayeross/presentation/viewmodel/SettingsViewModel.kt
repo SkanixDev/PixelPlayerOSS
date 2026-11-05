@@ -94,6 +94,7 @@ data class SettingsUiState(
     val autoScanLrcFiles: Boolean = false,
     val externalLyricsEnabled: Boolean = false,
     val externalArtistImagesEnabled: Boolean = false,
+    val serverFirstSearchEnabled: Boolean = true,
     val blockedDirectories: Set<String> = emptySet(),
     val appRebrandDialogShown: Boolean = false,
     val fullPlayerLoadingTweaks: FullPlayerLoadingTweaks = FullPlayerLoadingTweaks(),
@@ -464,6 +465,12 @@ class SettingsViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
+            userPreferencesRepository.serverFirstSearchEnabledFlow.collect { enabled ->
+                _uiState.update { it.copy(serverFirstSearchEnabled = enabled) }
+            }
+        }
+
+        viewModelScope.launch {
             userPreferencesRepository.backupInfoDismissedFlow.collect { dismissed ->
                 _uiState.update { it.copy(backupInfoDismissed = dismissed) }
             }
@@ -814,6 +821,12 @@ class SettingsViewModel @Inject constructor(
     fun setExternalLyricsEnabled(enabled: Boolean) {
         viewModelScope.launch {
             userPreferencesRepository.setExternalLyricsEnabled(enabled)
+        }
+    }
+
+    fun setServerFirstSearchEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            userPreferencesRepository.setServerFirstSearchEnabled(enabled)
         }
     }
 

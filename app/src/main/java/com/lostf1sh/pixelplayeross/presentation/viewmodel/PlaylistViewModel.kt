@@ -13,10 +13,12 @@ import com.lostf1sh.pixelplayeross.data.model.SortOption
 import com.lostf1sh.pixelplayeross.data.model.fromPlaylistSource
 import com.lostf1sh.pixelplayeross.data.model.isSmartPlaylist
 import com.lostf1sh.pixelplayeross.data.model.toPlaylistSource
+import com.lostf1sh.pixelplayeross.data.navidrome.serverPlaylistAdditions
 import com.lostf1sh.pixelplayeross.data.playlist.M3uManager
 import com.lostf1sh.pixelplayeross.data.playlist.SmartPlaylistBuilder
 import com.lostf1sh.pixelplayeross.data.preferences.PlaylistPreferencesRepository
 import com.lostf1sh.pixelplayeross.data.repository.MusicRepository
+import com.lostf1sh.pixelplayeross.data.worker.ServerPlaylistQueue
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -73,6 +75,7 @@ class PlaylistViewModel @Inject constructor(
     private val musicRepository: MusicRepository,
     private val dailyMixManager: DailyMixManager,
     private val m3uManager: M3uManager,
+    private val serverPlaylistQueue: ServerPlaylistQueue,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -587,6 +590,14 @@ class PlaylistViewModel @Inject constructor(
                 removeSongFromPlaylist(currentPlaylistId, songId)
             }
         }
+    }
+
+    /**
+     * App playlists that mirror a server playlist are replaced on every sync, so songs added to
+     * them have to reach the server too.
+     */
+    fun addSongsToServerPlaylists(songs: List<Song>, playlists: List<Playlist>) {
+        serverPlaylistQueue.enqueue(serverPlaylistAdditions(songs, playlists))
     }
 
     fun addSongsToPlaylists(songIds: List<String>, playlistIds: List<String>) {

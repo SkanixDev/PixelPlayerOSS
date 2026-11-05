@@ -231,6 +231,7 @@ constructor(
         val AUTO_SCAN_LRC_FILES = booleanPreferencesKey("auto_scan_lrc_files")
         val EXTERNAL_LYRICS_ENABLED = booleanPreferencesKey("external_lyrics_enabled")
         val EXTERNAL_ARTIST_IMAGES_ENABLED = booleanPreferencesKey("external_artist_images_enabled")
+        val SERVER_FIRST_SEARCH_ENABLED = booleanPreferencesKey("server_first_search_enabled")
 
         val ALBUM_ART_QUALITY = stringPreferencesKey("album_art_quality")
         val ALBUM_ART_CACHE_LIMIT_MB = intPreferencesKey("album_art_cache_limit_mb")
@@ -723,6 +724,17 @@ constructor(
     suspend fun setExternalArtistImagesEnabled(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[PreferencesKeys.EXTERNAL_ARTIST_IMAGES_ENABLED] = enabled
+        }
+    }
+
+    val serverFirstSearchEnabledFlow: Flow<Boolean> =
+            dataStore.data.map { preferences ->
+                preferences[PreferencesKeys.SERVER_FIRST_SEARCH_ENABLED] ?: true
+            }.distinctUntilChanged()
+
+    suspend fun setServerFirstSearchEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SERVER_FIRST_SEARCH_ENABLED] = enabled
         }
     }
 

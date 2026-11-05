@@ -78,6 +78,7 @@ import com.lostf1sh.pixelplayeross.data.model.SearchFilterType
 import com.lostf1sh.pixelplayeross.data.model.SearchHistoryItem
 import com.lostf1sh.pixelplayeross.data.model.SearchResultItem
 import com.lostf1sh.pixelplayeross.data.model.Song
+import com.lostf1sh.pixelplayeross.data.navidrome.searchPlaybackQueue
 import com.lostf1sh.pixelplayeross.presentation.components.SmartImage
 import com.lostf1sh.pixelplayeross.presentation.components.SmartImageListTargetSize
 import com.lostf1sh.pixelplayeross.presentation.components.SongInfoBottomSheet
@@ -1201,11 +1202,7 @@ fun SearchResultsList(
     }
     val onSongResultClick = remember(playerViewModel, onItemSelected, songResultsQueue, searchQueueName) {
         { song: Song ->
-            val playbackQueue = if (songResultsQueue.any { it.id == song.id }) {
-                songResultsQueue
-            } else {
-                listOf(song)
-            }
+            val playbackQueue = searchPlaybackQueue(song, songResultsQueue)
             playerViewModel.showAndPlaySong(song, playbackQueue, searchQueueName)
             onItemSelected()
         }

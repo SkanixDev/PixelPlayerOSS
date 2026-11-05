@@ -84,7 +84,18 @@ class NavidromeRepository @Inject constructor(
         private const val NAVIDROME_PARENT_DIRECTORY = "/Cloud/Navidrome"
         private const val NAVIDROME_GENRE = GenreParser.NAVIDROME_PLACEHOLDER
         private const val NAVIDROME_PLAYLIST_PREFIX = "navidrome_playlist:"
+        private const val SERVER_SEARCH_LIMIT = 50
         const val LIBRARY_PLAYLIST_ID = "__library__"
+
+        /**
+         * The server id of an app playlist that mirrors a real server playlist, or null. The
+         * library fallback playlist is app-made, so the server cannot add songs to it.
+         */
+        fun serverPlaylistIdOf(appPlaylistId: String): String? =
+            appPlaylistId
+                .takeIf { it.startsWith(NAVIDROME_PLAYLIST_PREFIX) }
+                ?.removePrefix(NAVIDROME_PLAYLIST_PREFIX)
+                ?.takeIf { it != LIBRARY_PLAYLIST_ID }
     }
 
     private val prefs: SharedPreferences = createCredentialPrefs()
@@ -690,6 +701,46 @@ class NavidromeRepository @Inject constructor(
                 Result.failure(e)
             }
         }
+    }
+
+    /**
+     * Search the server for songs the app can play from anywhere in the UI: a song already in
+     * the unified library is returned as that song, and any other one gets the numeric id the
+     * rest of the app expects, derived the same way as for synced songs.
+     */
+    suspend fun searchPlayableSongs(query: String, limit: Int = SERVER_SEARCH_LIMIT): Result<List<Song>> {
+        return searchSongs(query, limit).mapCatching { songs ->
+            val unifiedIds = songs.associateWith { toUnifiedSongId(it.navidromeId.orEmpty()) }
+            val librarySongs = withContext(Dispatchers.IO) {
+                musicDao.getSongsByIdsListSimple(unifiedIds.values.toList())
+            }.associateBy { it.id }
+
+            songs.map { song ->
+                val unifiedId = unifiedIds.getValue(song)
+                librarySongs[unifiedId]?.toSong() ?: song.copy(id = unifiedId.toString())
+            }
+        }
+    }
+
+    /**
+     * Add a song to a server playlist, then refresh the local copy of that playlist. A failed
+     * refresh does not fail the call: the song is on the server, and adding it again would
+     * only duplicate it.
+     */
+    suspend fun addSongToServerPlaylist(playlistId: String, songId: String): Result<Unit> {
+        if (!isLoggedIn) return Result.failure(Exception("Not logged in"))
+
+        val added = api.addSongToPlaylist(playlistId, songId)
+        if (added.isFailure) return added
+
+        try {
+            syncPlaylistSongs(playlistId).getOrThrow()
+            syncUnifiedLibrarySongsFromNavidrome()
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Timber.w(e, "$TAG: Could not refresh playlist $playlistId after adding a song")
+        }
+        return Result.success(Unit)
     }
 
     /**

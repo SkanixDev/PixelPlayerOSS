@@ -371,6 +371,14 @@ class NavidromeApiService @Inject constructor(
     }
 
     /**
+     * Append a song to a playlist on the server.
+     */
+    suspend fun addSongToPlaylist(playlistId: String, songId: String): Result<Unit> {
+        val params = mapOf("playlistId" to playlistId, "songIdToAdd" to songId)
+        return requestAndParse("updatePlaylist", params).map { }
+    }
+
+    /**
      * Search for songs, albums, and artists.
      * Uses search3 (ID3 tags) for better metadata.
      *
