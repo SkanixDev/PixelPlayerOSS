@@ -7,11 +7,14 @@ import com.lostf1sh.pixelplayeross.data.database.SearchHistoryDao
 import com.lostf1sh.pixelplayeross.data.database.SongEntity
 import com.lostf1sh.pixelplayeross.data.database.AlbumEntity
 import com.lostf1sh.pixelplayeross.data.database.ArtistEntity
+import com.lostf1sh.pixelplayeross.data.model.Album
+import com.lostf1sh.pixelplayeross.data.model.Artist
 import com.lostf1sh.pixelplayeross.data.model.Playlist
 import com.lostf1sh.pixelplayeross.data.model.SearchFilterType
 import com.lostf1sh.pixelplayeross.data.model.SearchResultItem
 import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.data.navidrome.NavidromeRepository
+import com.lostf1sh.pixelplayeross.data.navidrome.ServerSearchResults
 import com.lostf1sh.pixelplayeross.data.preferences.PlaylistPreferencesRepository
 import com.lostf1sh.pixelplayeross.data.preferences.UserPreferencesRepository
 import com.lostf1sh.pixelplayeross.data.database.FavoritesDao
@@ -61,6 +64,8 @@ class MusicRepositoryImplTest {
         coEvery { mockUserPreferencesRepository.initialSetupDoneFlow } returns flowOf(true)
         coEvery { mockUserPreferencesRepository.isFolderFilterActiveFlow } returns flowOf(false)
         every { mockUserPreferencesRepository.serverFirstSearchEnabledFlow } returns flowOf(true)
+        every { mockNavidromeRepository.remoteAlbum(any()) } returns null
+        every { mockNavidromeRepository.remoteArtist(any()) } returns null
         val dummyArtists = listOf(
             ArtistEntity(101L, "ArtistName1", 5, null),
             ArtistEntity(102L, "ArtistName2", 3, null)
@@ -120,6 +125,8 @@ class MusicRepositoryImplTest {
     inner class ServerFirstSearch {
         private val localSong = createSongEntity(1L, "Local", "Artist", "Pop", "/m/a.mp3", "/m")
         private val serverSong = Song.emptySong().copy(id = "-9", title = "Server", navidromeId = "s1")
+        private val serverAlbum = Album(-5L, "Server album", "Artist", 2026, 0L, null, 10)
+        private val serverArtist = Artist(-6L, "Server artist", 3)
 
         private suspend fun lastSongResults(): List<Song> =
             musicRepository.searchAll("query", SearchFilterType.SONGS)
@@ -138,16 +145,45 @@ class MusicRepositoryImplTest {
         @Test
         fun `server results come before local songs`() = runTest {
             every { mockNavidromeRepository.isLoggedIn } returns true
-            coEvery { mockNavidromeRepository.searchPlayableSongs(any(), any()) } returns
-                Result.success(listOf(serverSong))
+            coEvery { mockNavidromeRepository.searchServer(any()) } returns
+                Result.success(ServerSearchResults(songs = listOf(serverSong)))
 
             assertEquals(listOf("Server", "Local"), lastSongResults().map { it.title })
         }
 
         @Test
+        fun `albums and artists filters show server results`() = runTest {
+            every { mockNavidromeRepository.isLoggedIn } returns true
+            every { mockMusicDao.searchAlbums(any(), any(), any(), any()) } returns flowOf(emptyList())
+            every { mockMusicDao.searchArtists(any(), any(), any()) } returns flowOf(emptyList())
+            coEvery { mockNavidromeRepository.searchServer(any()) } returns Result.success(
+                ServerSearchResults(albums = listOf(serverAlbum), artists = listOf(serverArtist))
+            )
+
+            val albums = musicRepository.searchAll("query", SearchFilterType.ALBUMS).first { it.isNotEmpty() }
+            val artists = musicRepository.searchAll("query", SearchFilterType.ARTISTS).first { it.isNotEmpty() }
+
+            assertEquals(listOf(SearchResultItem.AlbumItem(serverAlbum)), albums)
+            assertEquals(listOf(SearchResultItem.ArtistItem(serverArtist)), artists)
+        }
+
+        @Test
+        fun `remote album and artist load from the server`() = runTest {
+            every { mockNavidromeRepository.remoteAlbum(-5L) } returns serverAlbum
+            every { mockNavidromeRepository.remoteArtist(-6L) } returns serverArtist
+            coEvery { mockNavidromeRepository.remoteAlbumSongs(-5L) } returns listOf(serverSong)
+            coEvery { mockNavidromeRepository.remoteArtistSongs(-6L) } returns listOf(serverSong)
+
+            assertEquals(serverAlbum, musicRepository.getAlbumById(-5L).first())
+            assertEquals(listOf(serverSong), musicRepository.getSongsForAlbum(-5L).first())
+            assertEquals(serverArtist, musicRepository.getArtistById(-6L).first())
+            assertEquals(listOf(serverSong), musicRepository.getSongsForArtist(-6L).first())
+        }
+
+        @Test
         fun `failing server keeps local songs`() = runTest {
             every { mockNavidromeRepository.isLoggedIn } returns true
-            coEvery { mockNavidromeRepository.searchPlayableSongs(any(), any()) } returns
+            coEvery { mockNavidromeRepository.searchServer(any()) } returns
                 Result.failure(Exception("offline"))
 
             assertEquals(listOf("Local"), lastSongResults().map { it.title })
@@ -159,7 +195,7 @@ class MusicRepositoryImplTest {
             every { mockUserPreferencesRepository.serverFirstSearchEnabledFlow } returns flowOf(false)
 
             assertEquals(listOf("Local"), lastSongResults().map { it.title })
-            coVerify(exactly = 0) { mockNavidromeRepository.searchPlayableSongs(any(), any()) }
+            coVerify(exactly = 0) { mockNavidromeRepository.searchServer(any()) }
         }
 
         @Test
@@ -167,7 +203,7 @@ class MusicRepositoryImplTest {
             every { mockNavidromeRepository.isLoggedIn } returns false
 
             assertEquals(listOf("Local"), lastSongResults().map { it.title })
-            coVerify(exactly = 0) { mockNavidromeRepository.searchPlayableSongs(any(), any()) }
+            coVerify(exactly = 0) { mockNavidromeRepository.searchServer(any()) }
         }
     }
 

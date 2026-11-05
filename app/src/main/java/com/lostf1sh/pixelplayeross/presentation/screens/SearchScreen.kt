@@ -1593,11 +1593,13 @@ fun SearchResultArtistItem(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    text = formatSongCount(artist.songCount),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                if (artist.songCount > 0) {
+                    Text(
+                        text = formatSongCount(artist.songCount),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
             FilledIconButton(
                 onClick = onPlayClick,

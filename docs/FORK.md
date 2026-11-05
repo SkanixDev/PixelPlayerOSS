@@ -27,13 +27,18 @@ App -> octo-fiesta -> Navidrome
 | Up to 3 minutes for the first byte, since octo-fiesta sends nothing before the download ends | `CLOUD_FIRST_RESPONSE_TIMEOUT_MS` |
 | Adding to a Navidrome playlist also writes to the server, retrying until the track is ready | `ServerPlaylistAddWorker` |
 
-Albums, artists and playlists in search results stay local.
+| Albums and artists come from the server too, and open like library ones | `NavidromeRepository.searchServer`, `RemoteCatalog` |
+| Albums and artists play as a queue: each external track downloads when its turn comes | `getSongsForAlbum`, `getSongsForArtist` |
+
+Playlists in search results stay local.
 
 ## Limits
 
 - External tracks can only be added to existing Navidrome playlists. The app does not create
   server playlists.
 - If a playlist addition fails for good, it only shows in the logs.
+- An artist page loads at most 30 albums.
+- A remote album or artist page restored after the app was killed shows as not found.
 - A played external track is not in the library until the next sync, so favorites and stats
   on it stay under its temporary id.
 

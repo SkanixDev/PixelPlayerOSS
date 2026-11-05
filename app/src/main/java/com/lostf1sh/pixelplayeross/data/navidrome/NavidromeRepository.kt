@@ -16,8 +16,14 @@ import com.lostf1sh.pixelplayeross.data.database.toEntity
 import com.lostf1sh.pixelplayeross.data.database.SongArtistCrossRef
 import com.lostf1sh.pixelplayeross.data.database.SongEntity
 import com.lostf1sh.pixelplayeross.data.database.SourceType
+import com.lostf1sh.pixelplayeross.data.database.toAlbum
+import com.lostf1sh.pixelplayeross.data.database.toArtist
 import com.lostf1sh.pixelplayeross.data.database.toSong
+import com.lostf1sh.pixelplayeross.data.model.Album
+import com.lostf1sh.pixelplayeross.data.model.Artist
 import com.lostf1sh.pixelplayeross.data.model.Song
+import com.lostf1sh.pixelplayeross.data.navidrome.model.NavidromeAlbum
+import com.lostf1sh.pixelplayeross.data.navidrome.model.NavidromeArtist
 import com.lostf1sh.pixelplayeross.data.navidrome.model.NavidromeAuthMethod
 import com.lostf1sh.pixelplayeross.data.navidrome.model.NavidromeCredentials
 import com.lostf1sh.pixelplayeross.data.navidrome.model.NavidromeMusicFolder
@@ -84,7 +90,11 @@ class NavidromeRepository @Inject constructor(
         private const val NAVIDROME_PARENT_DIRECTORY = "/Cloud/Navidrome"
         private const val NAVIDROME_GENRE = GenreParser.NAVIDROME_PLACEHOLDER
         private const val NAVIDROME_PLAYLIST_PREFIX = "navidrome_playlist:"
-        private const val SERVER_SEARCH_LIMIT = 50
+        private const val SERVER_SEARCH_SONG_LIMIT = 50
+        private const val SERVER_SEARCH_ALBUM_LIMIT = 20
+        private const val SERVER_SEARCH_ARTIST_LIMIT = 10
+        private const val REMOTE_ARTIST_ALBUM_LIMIT = 30
+        private const val REMOTE_ARTIST_CONCURRENT_ALBUMS = 4
         const val LIBRARY_PLAYLIST_ID = "__library__"
 
         /**
@@ -99,6 +109,7 @@ class NavidromeRepository @Inject constructor(
     }
 
     private val prefs: SharedPreferences = createCredentialPrefs()
+    private val remoteCatalog = RemoteCatalog()
 
     private fun createEncryptedPrefs(): SharedPreferences {
         val masterKey = MasterKey.Builder(context)
@@ -704,22 +715,156 @@ class NavidromeRepository @Inject constructor(
     }
 
     /**
-     * Search the server for songs the app can play from anywhere in the UI: a song already in
-     * the unified library is returned as that song, and any other one gets the numeric id the
-     * rest of the app expects, derived the same way as for synced songs.
+     * Search the server for songs, albums and artists the app can open from anywhere in the UI.
      */
-    suspend fun searchPlayableSongs(query: String, limit: Int = SERVER_SEARCH_LIMIT): Result<List<Song>> {
-        return searchSongs(query, limit).mapCatching { songs ->
-            val unifiedIds = songs.associateWith { toUnifiedSongId(it.navidromeId.orEmpty()) }
-            val librarySongs = withContext(Dispatchers.IO) {
-                musicDao.getSongsByIdsListSimple(unifiedIds.values.toList())
-            }.associateBy { it.id }
+    suspend fun searchServer(query: String): Result<ServerSearchResults> {
+        if (!isLoggedIn) return Result.failure(Exception("Not logged in"))
 
-            songs.map { song ->
-                val unifiedId = unifiedIds.getValue(song)
-                librarySongs[unifiedId]?.toSong() ?: song.copy(id = unifiedId.toString())
+        return withContext(Dispatchers.IO) {
+            api.search3(
+                query = query,
+                artistCount = SERVER_SEARCH_ARTIST_LIMIT,
+                albumCount = SERVER_SEARCH_ALBUM_LIMIT,
+                songCount = SERVER_SEARCH_SONG_LIMIT
+            ).mapCatching { response ->
+                val results = response.optJSONObject("searchResult3")
+                ServerSearchResults(
+                    songs = playableSongs(
+                        NavidromeResponseParser.parseSongs(results.objectsIn("song"))
+                    ),
+                    albums = NavidromeResponseParser.parseAlbums(results.objectsIn("album"))
+                        .map { registerAlbum(it) },
+                    artists = NavidromeResponseParser.parseArtists(results.objectsIn("artist"))
+                        .map { registerArtist(it) }
+                )
             }
         }
+    }
+
+    fun remoteAlbum(albumId: Long): Album? = remoteCatalog.album(albumId)?.item
+
+    fun remoteArtist(artistId: Long): Artist? = remoteCatalog.artist(artistId)?.item
+
+    suspend fun remoteAlbumSongs(albumId: Long): List<Song> {
+        val album = remoteCatalog.album(albumId) ?: return emptyList()
+        return withContext(Dispatchers.IO) {
+            playableSongs(NavidromeResponseParser.parseSongs(api.getAlbum(album.serverId).getOrThrow()))
+        }
+    }
+
+    /**
+     * The songs of a remote artist. Subsonic only lists an artist's albums, so this fetches them
+     * one by one, skipping those that fail unless nothing could be loaded at all.
+     */
+    suspend fun remoteArtistSongs(artistId: Long): List<Song> {
+        val artist = remoteCatalog.artist(artistId) ?: return emptyList()
+        return withContext(Dispatchers.IO) {
+            val albumIds = api.getArtist(artist.serverId).getOrThrow()
+                .optJSONObject("artist")
+                .objectsIn("album")
+                .map { it.optString("id") }
+                .filter { it.isNotBlank() }
+                .take(REMOTE_ARTIST_ALBUM_LIMIT)
+
+            val permits = Semaphore(REMOTE_ARTIST_CONCURRENT_ALBUMS)
+            val albums = coroutineScope {
+                albumIds.map { albumId ->
+                    async { permits.withPermit { api.getAlbum(albumId) } }
+                }.awaitAll()
+            }
+
+            if (albums.isNotEmpty() && albums.none { it.isSuccess }) albums.first().getOrThrow()
+            playableSongs(
+                NavidromeResponseParser.parseSongs(albums.flatMap { it.getOrDefault(emptyList()) })
+            )
+        }
+    }
+
+    /**
+     * Songs the rest of the app can handle: a song already in the unified library is returned
+     * as that song, and any other one gets the numeric ids the app expects, derived the same
+     * way as for synced songs.
+     */
+    private suspend fun playableSongs(songs: List<NavidromeSong>): List<Song> {
+        val unifiedIds = songs.associate { it.id to toUnifiedSongId(it.id) }
+        val librarySongs = musicDao.getSongsByIdsListSimple(unifiedIds.values.toList())
+            .associateBy { it.id }
+
+        return songs.map { song ->
+            val unifiedId = unifiedIds.getValue(song.id)
+            librarySongs[unifiedId]?.toSong() ?: song.toSong().copy(
+                id = unifiedId.toString(),
+                albumId = song.albumId?.let { serverAlbumId ->
+                    registerAlbum(
+                        NavidromeAlbum(
+                            id = serverAlbumId,
+                            name = song.album,
+                            artist = song.artist,
+                            coverArt = song.coverArt,
+                            year = song.year
+                        )
+                    ).id
+                } ?: -1L,
+                artistId = song.artistId?.let { serverArtistId ->
+                    registerArtist(NavidromeArtist(id = serverArtistId, name = song.artist)).id
+                } ?: -1L
+            )
+        }
+    }
+
+    /**
+     * The album to show for a server result. A library album stays the library's. Details
+     * registered from a search are kept over the partial ones a song carries.
+     */
+    private suspend fun registerAlbum(album: NavidromeAlbum): Album {
+        val unifiedId = toUnifiedAlbumId(album.id, album.name)
+        if (!isExternalServerTrackId(album.id)) {
+            musicDao.getAlbumById(unifiedId).first()?.let { return it.toAlbum() }
+        }
+        remoteCatalog.album(unifiedId)
+            ?.takeIf { album.songCount == 0 }
+            ?.let { return it.item }
+
+        return Album(
+            id = unifiedId,
+            title = album.name,
+            artist = album.artist,
+            year = album.year,
+            dateAdded = 0L,
+            albumArtUriString = album.coverArt?.let { "navidrome_cover://$it" },
+            songCount = album.songCount,
+            albumArtist = album.artist
+        ).also { remoteCatalog.putAlbum(it, album.id) }
+    }
+
+    /**
+     * The artist to show for a server result. Library artists go by name, so an external artist
+     * uses its server id instead: that keeps its catalog apart from a library artist of the
+     * same name.
+     */
+    private suspend fun registerArtist(artist: NavidromeArtist): Artist {
+        val isExternal = isExternalServerTrackId(artist.id)
+        val unifiedId = toUnifiedArtistId(if (isExternal) artist.id else artist.name)
+        if (!isExternal) {
+            musicDao.getArtistById(unifiedId).first()?.let { return it.toArtist() }
+        }
+        val imageUrl = artist.coverArt?.let { "navidrome_cover://$it" } ?: artist.artistImageUrl
+        remoteCatalog.artist(unifiedId)
+            ?.takeIf { imageUrl == null }
+            ?.let { return it.item }
+
+        // Song count stays 0: Subsonic only tells how many albums an artist has.
+        return Artist(
+            id = unifiedId,
+            name = artist.name,
+            songCount = 0,
+            imageUrl = imageUrl
+        ).also { remoteCatalog.putArtist(it, artist.id) }
+    }
+
+    private fun JSONObject?.objectsIn(key: String): List<JSONObject> {
+        val items = this?.optJSONArray(key) ?: return emptyList()
+        return (0 until items.length()).mapNotNull { items.optJSONObject(it) }
     }
 
     /**

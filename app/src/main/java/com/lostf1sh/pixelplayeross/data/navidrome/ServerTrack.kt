@@ -1,5 +1,7 @@
 package com.lostf1sh.pixelplayeross.data.navidrome
 
+import com.lostf1sh.pixelplayeross.data.model.Album
+import com.lostf1sh.pixelplayeross.data.model.Artist
 import com.lostf1sh.pixelplayeross.data.model.Playlist
 import com.lostf1sh.pixelplayeross.data.model.Song
 
@@ -38,6 +40,20 @@ fun mergeServerFirst(server: List<Song>, local: List<Song>): List<Song> {
 }
 
 private fun Song.titleKey(): String = "${title.trim().lowercase()}|${artist.trim().lowercase()}"
+
+fun mergeServerFirstAlbums(server: List<Album>, local: List<Album>): List<Album> {
+    val serverIds = server.mapTo(HashSet()) { it.id }
+    val serverTitles = server.mapTo(HashSet()) { it.titleKey() }
+    return server + local.filterNot { it.id in serverIds || it.titleKey() in serverTitles }
+}
+
+private fun Album.titleKey(): String = "${title.trim().lowercase()}|${artist.trim().lowercase()}"
+
+fun mergeServerFirstArtists(server: List<Artist>, local: List<Artist>): List<Artist> {
+    val serverIds = server.mapTo(HashSet()) { it.id }
+    val serverNames = server.mapTo(HashSet()) { it.name.trim().lowercase() }
+    return server + local.filterNot { it.id in serverIds || it.name.trim().lowercase() in serverNames }
+}
 
 /**
  * The queue to play a search result in. Auto-advancing into an external result would make the

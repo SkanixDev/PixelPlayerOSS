@@ -227,9 +227,9 @@ fun AlbumDetailScreen(
                     songs.groupBy { it.discNumber ?: 1 }
                 }
                 val lazyListState = rememberLazyListState()
-                val albumArtist = remember(songs, allArtists) {
+                val albumArtist = remember(songs, allArtists, uiState.artist) {
                     val artistId = songs.firstOrNull()?.artistId
-                    allArtists.firstOrNull { it.id == artistId }
+                    allArtists.firstOrNull { it.id == artistId } ?: uiState.artist
                 }
                 // The genre most tracks share, split so "House; Electronic" counts as both.
                 val albumGenre = remember(songs) {

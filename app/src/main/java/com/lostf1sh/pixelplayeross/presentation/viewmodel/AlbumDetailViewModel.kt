@@ -5,6 +5,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lostf1sh.pixelplayeross.data.model.Album
+import com.lostf1sh.pixelplayeross.data.model.Artist
 import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.data.repository.MusicRepository
 import com.lostf1sh.pixelplayeross.data.offline.CloudOfflineRepository
@@ -16,6 +17,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.SharingStarted
@@ -26,6 +28,7 @@ import javax.inject.Inject
 data class AlbumDetailUiState(
     val album: Album? = null,
     val songs: List<Song> = emptyList(),
+    val artist: Artist? = null,
     val isLoading: Boolean = false,
     val error: String? = null
 )
@@ -77,6 +80,9 @@ class AlbumDetailViewModel @Inject constructor(
                                     .thenBy { if (it.trackNumber > 0) it.trackNumber else Int.MAX_VALUE }
                                     .thenBy { it.title.lowercase() }
                             ),
+                            artist = songs.firstOrNull()?.let { song ->
+                                musicRepository.getArtistById(song.artistId).first()
+                            },
                             isLoading = false
                         )
                     } else {
